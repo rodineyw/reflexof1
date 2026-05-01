@@ -3,27 +3,464 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reflexo F1 - Sintetizador Numérico</title>
-  <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap" rel="stylesheet">
+  <title>Reflexo F1 - Otimizado</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #050505;
+      font-family: 'Inter', sans-serif;
+      user-select: none;
+      touch-action: none;
+      cursor: crosshair;
+    }
+
+    #fx-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    #target {
+      position: absolute;
+      font-size: 5rem;
+      font-weight: 900;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 120px;
+      height: 120px;
+      z-index: 10;
+      cursor: pointer;
+      will-change: transform, color, text-shadow;
+      transition: transform 0.1s ease-out;
+    }
+
+    .pulse {
+      animation: pulse 0.5s infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { transform: scale(1); }
+      to { transform: scale(1.1); }
+    }
+
+    #start-screen {
+      backdrop-filter: blur(10px);
+    }
+
+    #io-logo {
+      text-shadow: 0 0 40px rgba(255,255,255,0.4);
+      will-change: opacity, transform;
+    }
+  </style>
 </head>
-<body>
-  <canvas id="canvas"></canvas>
-  
-  <div id="the-number">1</div>
-  
-  <div id="tachometer">
-    <div id="tachometer-bar"></div>
+<body class="text-white">
+
+  <!-- Tela Inicial para contornar bloqueio de áudio -->
+  <div id="start-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 transition-opacity duration-500">
+    <h1 class="text-4xl font-black mb-4 tracking-tighter">REFLEXO F1</h1>
+    <p class="text-gray-400 mb-8 max-w-md text-center">Mova o cursor para acelerar o motor da F1. Clique no alvo o mais rápido que puder.</p>
+    <button id="btn-start" class="px-8 py-4 bg-white text-black font-bold rounded-full hover:scale-105 transition-transform">
+      INICIAR MOTOR
+    </button>
   </div>
 
-  <div id="io-logo" style="display: none;">
-    <div class="logo-text">
-      <span style="color: #4285F4">G</span><span style="color: #EA4335">o</span><span style="color: #FBBC05">o</span><span style="color: #4285F4">g</span><span style="color: #34A853">l</span><span style="color: #EA4335">e</span>
-      <span style="color: #ffffff; margin-left: 10px;">I/O</span>
-    </div>
-    <div id="final-stats">Média: 0ms</div>
+  <!-- Tela Final para reinício -->
+  <div id="end-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 transition-opacity duration-500" style="display: none; opacity: 0;">
+    <h2 class="text-5xl font-black mb-4 text-green-400 tracking-tighter">POLE POSITION!</h2>
+    <p class="text-gray-400 mb-8 max-w-md text-center">Seus reflexos são dignos da F1.</p>
+    <button id="btn-restart" class="px-8 py-4 bg-white text-black font-bold rounded-full hover:scale-105 transition-transform">
+      NOVA VOLTA
+    </button>
   </div>
+
+  <canvas id="fx-canvas"></canvas>
   
-  <script src="script.js"></script>
+  <div id="target" style="display: none;">1</div>
+
+  <div id="io-logo" class="absolute inset-0 z-40 flex items-center justify-center text-8xl md:text-9xl font-black opacity-0 pointer-events-none transition-all duration-1000 transform scale-50">
+    <span style="color: #4285F4">G</span><span style="color: #EA4335">o</span><span style="color: #FBBC05">o</span><span style="color: #4285F4">g</span><span style="color: #34A853">l</span><span style="color: #EA4335">e</span>
+    <span class="ml-4 text-white">I/O</span>
+  </div>
+
+  <script>
+    /**
+     * Motor de Áudio: Simulador de Motor de F1
+     */
+    class AudioEngine {
+      constructor() {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Oscilador Principal (Ronco do Motor)
+        this.osc = this.ctx.createOscillator();
+        this.gain = this.ctx.createGain();
+        this.filter = this.ctx.createBiquadFilter();
+        
+        // Oscilador Secundário (Harmônicos agudos da F1)
+        this.osc2 = this.ctx.createOscillator();
+        
+        // Setup chain: Oscs -> Filter -> Gain -> Output
+        this.osc.connect(this.filter);
+        this.osc2.connect(this.filter);
+        this.filter.connect(this.gain);
+        this.gain.connect(this.ctx.destination);
+        
+        // Sawtooth cria aquele som rasgado clássico de motor
+        this.osc.type = 'sawtooth';
+        this.osc2.type = 'square';
+        
+        // Filtro passa-banda para dar o efeito de escape e ressonância do carro
+        this.filter.type = 'bandpass';
+        this.filter.Q.value = 4; // Ressonância alta para gritar
+        this.filter.frequency.value = 800;
+        
+        this.gain.gain.value = 0;
+        
+        this.osc.start();
+        this.osc2.start();
+      }
+
+      updateSynth(energy, number, xRatio) {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        
+        // Marcha lenta (Idle) em torno de 50Hz. Aceleração máxima vai até ~450Hz.
+        const baseRPM = 50 + (energy * 4); 
+        
+        // Volume aumenta drasticamente conforme a aceleração
+        const volume = Math.min(0.05 + (energy * 0.006), 0.5);
+        
+        // O filtro acompanha o RPM para fazer o motor "gritar" nas altas rotações
+        const filterFreq = 600 + (energy * 20);
+        
+        this.osc.frequency.setTargetAtTime(baseRPM, this.ctx.currentTime, 0.1);
+        
+        // Oscilador 2 toca uma oitava acima (harmônico do V10)
+        this.osc2.frequency.setTargetAtTime(baseRPM * 2.01, this.ctx.currentTime, 0.1);
+        
+        this.filter.frequency.setTargetAtTime(filterFreq, this.ctx.currentTime, 0.1);
+        this.gain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.1);
+      }
+
+      playExplosion(number) {
+        // Som de "Troca de Marcha" / Estouro do escapamento
+        const explOsc = this.ctx.createOscillator();
+        const explGain = this.ctx.createGain();
+        
+        explOsc.type = 'square';
+        explOsc.connect(explGain);
+        explGain.connect(this.ctx.destination);
+        
+        // Frequência caindo rapidamente simulando uma explosão do escape
+        explOsc.frequency.setValueAtTime(600 + (number * 50), this.ctx.currentTime);
+        explOsc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.2);
+        
+        explGain.gain.setValueAtTime(0.6, this.ctx.currentTime);
+        explGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+        
+        explOsc.start();
+        explOsc.stop(this.ctx.currentTime + 0.3);
+      }
+    }
+
+    /**
+     * Sistema de Partículas via Canvas (Alta Performance)
+     */
+    class ParticleSystem {
+      constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.particles = [];
+        this.shockwaves = [];
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+      }
+
+      resize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+      }
+
+      explode(x, y, color, energy) {
+        // Shockwave
+        this.shockwaves.push({ x, y, radius: 10, maxRadius: 100 + energy * 2, alpha: 1, color });
+
+        // Partículas
+        const count = 50 + Math.floor(energy);
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = Math.random() * 15 + 5 + (energy * 0.2);
+          this.particles.push({
+            x, y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            radius: Math.random() * 6 + 2,
+            color,
+            life: 1,
+            decay: Math.random() * 0.02 + 0.015
+          });
+        }
+      }
+
+      updateAndDraw(dt) {
+        // Efeito de rastro (trail)
+        this.ctx.fillStyle = 'rgba(5, 5, 5, 0.3)';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.globalCompositeOperation = 'lighter';
+
+        // Draw Shockwaves
+        for (let i = this.shockwaves.length - 1; i >= 0; i--) {
+          let sw = this.shockwaves[i];
+          sw.radius += (sw.maxRadius - sw.radius) * 0.1 * dt;
+          sw.alpha -= 0.05 * dt;
+
+          if (sw.alpha <= 0) {
+            this.shockwaves.splice(i, 1);
+            continue;
+          }
+
+          this.ctx.beginPath();
+          this.ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
+          this.ctx.strokeStyle = sw.color;
+          this.ctx.globalAlpha = sw.alpha;
+          this.ctx.lineWidth = 4;
+          this.ctx.stroke();
+          this.ctx.globalAlpha = 1;
+        }
+
+        // Draw Particles
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          let p = this.particles[i];
+          
+          p.vy += 0.5 * dt; // Gravidade
+          p.vx *= 0.96; // Atrito
+          p.vy *= 0.96;
+          
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.life -= p.decay * dt;
+
+          if (p.life <= 0) {
+            this.particles.splice(i, 1);
+            continue;
+          }
+
+          this.ctx.beginPath();
+          this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          this.ctx.fillStyle = p.color;
+          this.ctx.globalAlpha = p.life;
+          this.ctx.fill();
+        }
+        this.ctx.globalAlpha = 1;
+        this.ctx.globalCompositeOperation = 'source-over';
+      }
+    }
+
+    /**
+     * Classe Principal do Jogo
+     */
+    class Game {
+      constructor() {
+        this.targetEl = document.getElementById('target');
+        this.logoEl = document.getElementById('io-logo');
+        this.startScreen = document.getElementById('start-screen');
+        this.btnStart = document.getElementById('btn-start');
+        
+        this.endScreen = document.getElementById('end-screen');
+        this.btnRestart = document.getElementById('btn-restart');
+        
+        this.particles = new ParticleSystem('fx-canvas');
+        this.audio = null; // Inicializado no start
+        
+        this.state = {
+          number: 1,
+          energy: 0,
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+          vx: 0,
+          vy: 0,
+          mouseX: 0,
+          mouseY: 0,
+          isRunning: false,
+          lastTime: performance.now()
+        };
+
+        this.bindEvents();
+      }
+
+      bindEvents() {
+        this.btnStart.addEventListener('click', () => this.start());
+        this.btnRestart.addEventListener('click', () => this.restart());
+        
+        const trackMouse = (e) => {
+          if (!this.state.isRunning) return;
+          const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+          const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+          
+          const dx = clientX - this.state.mouseX;
+          const dy = clientY - this.state.mouseY;
+          const speed = Math.sqrt(dx * dx + dy * dy);
+          
+          this.state.mouseX = clientX;
+          this.state.mouseY = clientY;
+          
+          if (speed > 1) {
+            this.state.energy = Math.min(this.state.energy + speed * 0.5, 100);
+          }
+        };
+
+        window.addEventListener('mousemove', trackMouse);
+        window.addEventListener('touchmove', trackMouse);
+        
+        const hitTarget = (e) => {
+          e.preventDefault();
+          this.hit();
+        };
+        this.targetEl.addEventListener('mousedown', hitTarget);
+        this.targetEl.addEventListener('touchstart', hitTarget);
+      }
+
+      start() {
+        this.audio = new AudioEngine();
+        this.state.isRunning = true;
+        this.startScreen.style.opacity = '0';
+        setTimeout(() => {
+          this.startScreen.style.display = 'none';
+          this.targetEl.style.display = 'flex';
+          this.loop();
+        }, 500);
+      }
+
+      hit() {
+        if (!this.state.isRunning) return;
+        
+        const currentColor = this.targetEl.style.color || "#ffffff";
+        this.particles.explode(this.state.x, this.state.y, currentColor, this.state.energy);
+        this.audio.playExplosion(this.state.number);
+        
+        this.state.number++;
+        this.state.energy = 0;
+        
+        if (this.state.number > 10) {
+          this.win();
+        } else {
+          this.targetEl.textContent = this.state.number;
+          this.respawnTarget();
+        }
+      }
+
+      respawnTarget() {
+        const padding = 100;
+        this.state.x = padding + Math.random() * (window.innerWidth - padding * 2);
+        this.state.y = padding + Math.random() * (window.innerHeight - padding * 2);
+        this.state.vx = (Math.random() - 0.5) * 10;
+        this.state.vy = (Math.random() - 0.5) * 10;
+      }
+
+      win() {
+        this.state.isRunning = false;
+        this.targetEl.style.display = 'none';
+        
+        // Massive explosion
+        this.particles.explode(window.innerWidth/2, window.innerHeight/2, '#4285F4', 200);
+        
+        // Show Logo
+        this.logoEl.style.opacity = '1';
+        this.logoEl.style.transform = 'scale(1)';
+        
+        setTimeout(() => {
+          this.logoEl.style.opacity = '0';
+          this.logoEl.style.transform = 'scale(1.5)';
+          
+          // Mostrar tela de fim em vez de reset automático
+          setTimeout(() => {
+            this.endScreen.style.display = 'flex';
+            void this.endScreen.offsetWidth; // Forçar reflow para animação rodar
+            this.endScreen.style.opacity = '1';
+          }, 1000);
+        }, 3000);
+      }
+
+      restart() {
+        this.endScreen.style.opacity = '0';
+        setTimeout(() => {
+          this.endScreen.style.display = 'none';
+          this.reset();
+        }, 500);
+      }
+
+      reset() {
+        this.state.number = 1;
+        this.targetEl.textContent = this.state.number;
+        this.targetEl.style.display = 'flex';
+        this.respawnTarget();
+        this.state.isRunning = true;
+      }
+
+      loop(currentTime = performance.now()) {
+        const dt = (currentTime - this.state.lastTime) / 16.66; // Normalizado para 60fps (1.0)
+        this.state.lastTime = currentTime;
+
+        if (this.state.isRunning) {
+          this.updatePhysics(dt);
+          this.audio.updateSynth(this.state.energy, this.state.number, this.state.mouseX / window.innerWidth);
+        }
+
+        this.particles.updateAndDraw(dt);
+        requestAnimationFrame((t) => this.loop(t));
+      }
+
+      updatePhysics(dt) {
+        let s = this.state;
+        
+        // Decaimento de energia
+        s.energy = Math.max(0, s.energy - 0.5 * dt);
+
+        // Styling baseado na energia e número
+        const scale = 0.5 + (s.number * 0.05) + (s.energy * 0.01);
+        const hue = (s.number * 36 + s.energy * 2) % 360;
+        const color = `hsl(${hue}, 100%, 60%)`;
+        
+        this.targetEl.style.color = color;
+        this.targetEl.style.textShadow = `0 0 ${10 + s.energy}px ${color}`;
+        
+        // Dinâmica de Movimento
+        const maxSpeed = 3 + (s.number * 0.5) + (s.energy * 0.2);
+        
+        s.vx += (Math.random() - 0.5) * (1 + s.energy * 0.1) * dt;
+        s.vy += (Math.random() - 0.5) * (1 + s.energy * 0.1) * dt;
+
+        // Normalização de velocidade
+        const speed = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
+        if (speed > maxSpeed) {
+          s.vx = (s.vx / speed) * maxSpeed;
+          s.vy = (s.vy / speed) * maxSpeed;
+        }
+
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+
+        // Colisão com as bordas
+        const size = 60 * scale;
+        if (s.x < size) { s.x = size; s.vx *= -1; }
+        if (s.x > window.innerWidth - size) { s.x = window.innerWidth - size; s.vx *= -1; }
+        if (s.y < size) { s.y = size; s.vy *= -1; }
+        if (s.y > window.innerHeight - size) { s.y = window.innerHeight - size; s.vy *= -1; }
+
+        this.targetEl.style.transform = `translate(${s.x - 60}px, ${s.y - 60}px) scale(${scale})`;
+      }
+    }
+
+    // Inicialização
+    window.onload = () => {
+      new Game();
+    };
+  </script>
 </body>
 </html>
