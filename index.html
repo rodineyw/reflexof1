@@ -75,7 +75,7 @@
   <!-- Tela Final para reinício -->
   <div id="end-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 transition-opacity duration-500" style="display: none; opacity: 0;">
     <h2 class="text-5xl font-black mb-4 text-green-400 tracking-tighter">POLE POSITION!</h2>
-    <p class="text-gray-400 mb-8 max-w-md text-center">Seus reflexos são dignos da F1.</p>
+    <p id="final-score-text" class="text-gray-300 mb-8 max-w-md text-center text-2xl font-bold">Seus reflexos são dignos da F1.</p>
     <button id="btn-restart" class="px-8 py-4 bg-white text-black font-bold rounded-full hover:scale-105 transition-transform">
       NOVA VOLTA
     </button>
@@ -178,6 +178,7 @@
         this.ctx = this.canvas.getContext('2d');
         this.particles = [];
         this.shockwaves = [];
+        this.floatingTexts = [];
         this.resize();
         window.addEventListener('resize', () => this.resize());
       }
@@ -206,6 +207,12 @@
             decay: Math.random() * 0.02 + 0.015
           });
         }
+      }
+
+      spawnText(x, y, text, color) {
+        this.floatingTexts.push({
+          x, y, text, color, life: 1.5, vy: -2
+        });
       }
 
       updateAndDraw(dt) {
@@ -257,6 +264,25 @@
           this.ctx.globalAlpha = p.life;
           this.ctx.fill();
         }
+
+        // Draw Floating Texts
+        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+          let ft = this.floatingTexts[i];
+          ft.y += ft.vy * dt;
+          ft.life -= 0.02 * dt;
+
+          if (ft.life <= 0) {
+            this.floatingTexts.splice(i, 1);
+            continue;
+          }
+
+          this.ctx.font = "900 35px Inter";
+          this.ctx.textAlign = "center";
+          this.ctx.fillStyle = ft.color;
+          this.ctx.globalAlpha = ft.life > 1 ? 1 : ft.life;
+          this.ctx.fillText(ft.text, ft.x, ft.y);
+        }
+
         this.ctx.globalAlpha = 1;
         this.ctx.globalCompositeOperation = 'source-over';
       }
@@ -288,7 +314,9 @@
           mouseX: 0,
           mouseY: 0,
           isRunning: false,
-          lastTime: performance.now()
+          lastTime: performance.now(),
+          timeSpawned: performance.now(),
+          reactionTimes: []
         };
 
         this.bindEvents();
@@ -340,6 +368,17 @@
       hit() {
         if (!this.state.isRunning) return;
         
+        // Calcular tempo de reação
+        const rxTime = Math.floor(performance.now() - this.state.timeSpawned);
+        this.state.reactionTimes.push(rxTime);
+        
+        // Cor do texto baseada na agilidade
+        let textColor = "#00ffcc";
+        if (rxTime > 350) textColor = "#ffff00";
+        if (rxTime > 600) textColor = "#ff9900";
+        
+        this.particles.spawnText(this.state.x, this.state.y, `${rxTime}ms`, textColor);
+        
         const currentColor = this.targetEl.style.color || "#ffffff";
         this.particles.explode(this.state.x, this.state.y, currentColor, this.state.energy);
         this.audio.playExplosion(this.state.number);
@@ -361,11 +400,16 @@
         this.state.y = padding + Math.random() * (window.innerHeight - padding * 2);
         this.state.vx = (Math.random() - 0.5) * 10;
         this.state.vy = (Math.random() - 0.5) * 10;
+        this.state.timeSpawned = performance.now();
       }
 
       win() {
         this.state.isRunning = false;
         this.targetEl.style.display = 'none';
+        
+        // Calcular média
+        const avg = Math.floor(this.state.reactionTimes.reduce((a,b)=>a+b, 0) / this.state.reactionTimes.length);
+        document.getElementById('final-score-text').innerHTML = `Sua média de reação foi de <span class="text-white">${avg}ms</span>!`;
         
         // Massive explosion
         this.particles.explode(window.innerWidth/2, window.innerHeight/2, '#4285F4', 200);
@@ -397,6 +441,7 @@
 
       reset() {
         this.state.number = 1;
+        this.state.reactionTimes = [];
         this.targetEl.textContent = this.state.number;
         this.targetEl.style.display = 'flex';
         this.respawnTarget();
