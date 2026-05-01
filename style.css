@@ -57,3 +57,30 @@ body:active {
   50% { filter: brightness(5) blur(10px); opacity: 0.8; }
   100% { transform: scale(0.01) translate(-50%, -50%); filter: brightness(1) blur(0px); opacity: 0; }
 }
+
+#io-logo {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  font-size: 8rem;
+  font-weight: 900;
+  pointer-events: none;
+  z-index: 100;
+  text-shadow: 0 0 30px rgba(255,255,255,0.5);
+  opacity: 0;
+  will-change: transform, opacity;
+  display: flex;
+  white-space: nowrap;
+}
+
+.show-logo {
+  animation: logo-flash 1s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+}
+
+@keyframes logo-flash {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+  20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+  80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+}
