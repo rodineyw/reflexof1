@@ -1,130 +1,94 @@
-body {
-  margin: 0;
-  overflow: hidden;
-  background-color: #050505;
-  color: #ffffff;
-  height: 100vh;
-  font-family: 'Inter', sans-serif, monospace;
-  user-select: none;
-  cursor: grab;
-}
+<style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #050505;
+      font-family: 'Inter', sans-serif;
+      user-select: none;
+      touch-action: none;
+      cursor: crosshair;
+    }
 
-body:active {
-  cursor: grabbing;
-}
+    #fx-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
 
-#canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none; /* Deixa os cliques passarem para o número e o body */
-  z-index: 1;
-}
+    #target {
+      position: absolute;
+      font-size: 6rem;
+      font-weight: 900;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 150px;
+      height: 150px;
+      z-index: 10;
+      cursor: pointer;
+      will-change: transform, color, text-shadow;
+      /* Removida transition de transform para a física operar direto no frame */
+    }
 
-#the-number {
-  position: absolute;
-  font-size: 6rem;
-  font-weight: 900;
-  text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-  will-change: transform, color, text-shadow;
-  z-index: 10;
-  cursor: grab;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 150px;
-  height: 150px;
-  left: 0;
-  top: 0;
-}
-#the-number:active {
-  cursor: grabbing;
-}
+    #damage-overlay {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle, transparent 40%, rgba(255, 0, 0, 0.4) 100%);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 20;
+      transition: opacity 0.3s ease-out;
+      will-change: opacity;
+    }
 
-/* Tachometer */
-#tachometer {
-  position: fixed;
-  bottom: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 60%;
-  height: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  z-index: 5;
-  pointer-events: none;
-  overflow: hidden;
-}
-#tachometer-bar {
-  height: 100%;
-  width: 0%;
-  background: #34A853;
-  transition: width 0.1s linear, background-color 0.2s, box-shadow 0.2s;
-  box-shadow: 0 0 10px #34A853;
-}
+    .flash-red {
+      opacity: 1 !important;
+      transition: none !important;
+    }
 
-/* Punição de erro */
-.miss-flash {
-  animation: flash-red 0.3s forwards;
-}
-@keyframes flash-red {
-  0% { box-shadow: inset 0 0 100px rgba(255, 0, 0, 0.8); }
-  100% { box-shadow: inset 0 0 0px rgba(255, 0, 0, 0); }
-}
+    /* Tachometer */
+    #tachometer {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 60%;
+      height: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      z-index: 5;
+      pointer-events: none;
+      overflow: hidden;
+    }
 
-/* Logo e Stats finais */
-#io-logo {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%) scale(0);
-  pointer-events: none;
-  z-index: 100;
-  opacity: 0;
-  will-change: transform, opacity;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.logo-text {
-  font-size: 8rem;
-  font-weight: 900;
-  text-shadow: 0 0 30px rgba(255,255,255,0.5);
-  white-space: nowrap;
-}
-#final-stats {
-  font-size: 2.5rem;
-  font-weight: 900;
-  margin-top: 15px;
-  color: #00ffcc;
-  text-shadow: 0 0 15px #00ffcc;
-  opacity: 0;
-}
+    #tachometer-bar {
+      height: 100%;
+      width: 0%;
+      background: #34A853;
+      transition: width 0.1s linear, background-color 0.2s, box-shadow 0.2s;
+      box-shadow: 0 0 10px #34A853;
+    }
 
-.show-logo {
-  animation: logo-flash 3s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
-}
-.show-logo #final-stats {
-  animation: fade-in 0.5s 0.8s forwards;
-}
+    #start-screen, #end-screen {
+      backdrop-filter: blur(10px);
+    }
 
-@keyframes logo-flash {
-  0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
-  10% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
-  85% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
-}
-@keyframes fade-in {
-  to { opacity: 1; }
-}
+    #io-logo {
+      text-shadow: 0 0 40px rgba(255,255,255,0.4);
+      will-change: opacity, transform;
+    }
 
-.explode {
-  animation: explode-anim 0.4s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
-}
-@keyframes explode-anim {
-  0% { transform: scale(1) translate(-50%, -50%); filter: brightness(2) blur(0px); opacity: 1; }
-  50% { filter: brightness(5) blur(10px); opacity: 0.8; }
-  100% { transform: scale(0.01) translate(-50%, -50%); filter: brightness(1) blur(0px); opacity: 0; }
-}
+    .explode {
+      animation: explode-anim 0.4s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+    }
+
+    @keyframes explode-anim {
+      0% { transform: scale(1); filter: brightness(2) blur(0px); opacity: 1; }
+      50% { filter: brightness(5) blur(10px); opacity: 0.8; }
+      100% { transform: scale(0.01); filter: brightness(1) blur(0px); opacity: 0; }
+    }
+  </style>

@@ -1,511 +1,687 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reflexo F1 - Otimizado</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap" rel="stylesheet">
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background-color: #050505;
-      font-family: 'Inter', sans-serif;
-      user-select: none;
-      touch-action: none;
-      cursor: crosshair;
-    }
-
-    #fx-canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    #target {
-      position: absolute;
-      font-size: 5rem;
-      font-weight: 900;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      width: 120px;
-      height: 120px;
-      z-index: 10;
-      cursor: pointer;
-      will-change: transform, color, text-shadow;
-      transition: transform 0.1s ease-out;
-    }
-
-    .pulse {
-      animation: pulse 0.5s infinite alternate;
-    }
-
-    @keyframes pulse {
-      from { transform: scale(1); }
-      to { transform: scale(1.1); }
-    }
-
-    #start-screen {
-      backdrop-filter: blur(10px);
-    }
-
-    #io-logo {
-      text-shadow: 0 0 40px rgba(255,255,255,0.4);
-      will-change: opacity, transform;
-    }
-  </style>
-</head>
-<body class="text-white">
-
-  <!-- Tela Inicial para contornar bloqueio de áudio -->
-  <div id="start-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 transition-opacity duration-500">
-    <h1 class="text-4xl font-black mb-4 tracking-tighter">REFLEXO F1</h1>
-    <p class="text-gray-400 mb-8 max-w-md text-center">Mova o cursor para acelerar o motor da F1. Clique no alvo o mais rápido que puder.</p>
-    <button id="btn-start" class="px-8 py-4 bg-white text-black font-bold rounded-full hover:scale-105 transition-transform">
-      INICIAR MOTOR
-    </button>
-  </div>
-
-  <!-- Tela Final para reinício -->
-  <div id="end-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 transition-opacity duration-500" style="display: none; opacity: 0;">
-    <h2 class="text-5xl font-black mb-4 text-green-400 tracking-tighter">POLE POSITION!</h2>
-    <p id="final-score-text" class="text-gray-300 mb-8 max-w-md text-center text-2xl font-bold">Seus reflexos são dignos da F1.</p>
-    <button id="btn-restart" class="px-8 py-4 bg-white text-black font-bold rounded-full hover:scale-105 transition-transform">
-      NOVA VOLTA
-    </button>
-  </div>
-
-  <canvas id="fx-canvas"></canvas>
-  
-  <div id="target" style="display: none;">1</div>
-
-  <div id="io-logo" class="absolute inset-0 z-40 flex items-center justify-center text-8xl md:text-9xl font-black opacity-0 pointer-events-none transition-all duration-1000 transform scale-50">
-    <span style="color: #4285F4">G</span><span style="color: #EA4335">o</span><span style="color: #FBBC05">o</span><span style="color: #4285F4">g</span><span style="color: #34A853">l</span><span style="color: #EA4335">e</span>
-    <span class="ml-4 text-white">I/O</span>
-  </div>
-
-  <script>
-    /**
-     * Motor de Áudio: Simulador de Motor de F1
-     */
-    class AudioEngine {
-      constructor() {
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-        
-        // Oscilador Principal (Ronco do Motor)
-        this.osc = this.ctx.createOscillator();
-        this.gain = this.ctx.createGain();
-        this.filter = this.ctx.createBiquadFilter();
-        
-        // Oscilador Secundário (Harmônicos agudos da F1)
-        this.osc2 = this.ctx.createOscillator();
-        
-        // Setup chain: Oscs -> Filter -> Gain -> Output
-        this.osc.connect(this.filter);
-        this.osc2.connect(this.filter);
-        this.filter.connect(this.gain);
-        this.gain.connect(this.ctx.destination);
-        
-        // Sawtooth cria aquele som rasgado clássico de motor
-        this.osc.type = 'sawtooth';
-        this.osc2.type = 'square';
-        
-        // Filtro passa-banda para dar o efeito de escape e ressonância do carro
-        this.filter.type = 'bandpass';
-        this.filter.Q.value = 4; // Ressonância alta para gritar
-        this.filter.frequency.value = 800;
-        
-        this.gain.gain.value = 0;
-        
-        this.osc.start();
-        this.osc2.start();
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reflexo F1 - Otimizado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #050505;
+        font-family: "Inter", sans-serif;
+        user-select: none;
+        touch-action: none;
+        cursor: crosshair;
       }
 
-      updateSynth(energy, number, xRatio) {
-        if (this.ctx.state === 'suspended') this.ctx.resume();
-        
-        // Marcha lenta (Idle) em torno de 50Hz. Aceleração máxima vai até ~450Hz.
-        const baseRPM = 50 + (energy * 4); 
-        
-        // Volume aumenta drasticamente conforme a aceleração
-        const volume = Math.min(0.05 + (energy * 0.006), 0.5);
-        
-        // O filtro acompanha o RPM para fazer o motor "gritar" nas altas rotações
-        const filterFreq = 600 + (energy * 20);
-        
-        this.osc.frequency.setTargetAtTime(baseRPM, this.ctx.currentTime, 0.1);
-        
-        // Oscilador 2 toca uma oitava acima (harmônico do V10)
-        this.osc2.frequency.setTargetAtTime(baseRPM * 2.01, this.ctx.currentTime, 0.1);
-        
-        this.filter.frequency.setTargetAtTime(filterFreq, this.ctx.currentTime, 0.1);
-        this.gain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.1);
+      #fx-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        pointer-events: none;
       }
 
-      playExplosion(number) {
-        // Som de "Troca de Marcha" / Estouro do escapamento
-        const explOsc = this.ctx.createOscillator();
-        const explGain = this.ctx.createGain();
-        
-        explOsc.type = 'square';
-        explOsc.connect(explGain);
-        explGain.connect(this.ctx.destination);
-        
-        // Frequência caindo rapidamente simulando uma explosão do escape
-        explOsc.frequency.setValueAtTime(600 + (number * 50), this.ctx.currentTime);
-        explOsc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.2);
-        
-        explGain.gain.setValueAtTime(0.6, this.ctx.currentTime);
-        explGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
-        
-        explOsc.start();
-        explOsc.stop(this.ctx.currentTime + 0.3);
-      }
-    }
-
-    /**
-     * Sistema de Partículas via Canvas (Alta Performance)
-     */
-    class ParticleSystem {
-      constructor(canvasId) {
-        this.canvas = document.getElementById(canvasId);
-        this.ctx = this.canvas.getContext('2d');
-        this.particles = [];
-        this.shockwaves = [];
-        this.floatingTexts = [];
-        this.resize();
-        window.addEventListener('resize', () => this.resize());
+      #target {
+        position: absolute;
+        font-size: 6rem;
+        font-weight: 900;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 150px;
+        height: 150px;
+        z-index: 10;
+        cursor: pointer;
+        will-change: transform, color, text-shadow;
+        /* Removida transition de transform para a física operar direto no frame */
       }
 
-      resize() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+      #damage-overlay {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          circle,
+          transparent 40%,
+          rgba(255, 0, 0, 0.4) 100%
+        );
+        opacity: 0;
+        pointer-events: none;
+        z-index: 20;
+        transition: opacity 0.3s ease-out;
+        will-change: opacity;
       }
 
-      explode(x, y, color, energy) {
-        // Shockwave
-        this.shockwaves.push({ x, y, radius: 10, maxRadius: 100 + energy * 2, alpha: 1, color });
+      .flash-red {
+        opacity: 1 !important;
+        transition: none !important;
+      }
 
-        // Partículas
-        const count = 50 + Math.floor(energy);
-        for (let i = 0; i < count; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = Math.random() * 15 + 5 + (energy * 0.2);
-          this.particles.push({
-            x, y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            radius: Math.random() * 6 + 2,
-            color,
-            life: 1,
-            decay: Math.random() * 0.02 + 0.015
+      /* Tachometer */
+      #tachometer {
+        position: fixed;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 60%;
+        height: 12px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        z-index: 5;
+        pointer-events: none;
+        overflow: hidden;
+      }
+
+      #tachometer-bar {
+        height: 100%;
+        width: 0%;
+        background: #34a853;
+        transition:
+          width 0.1s linear,
+          background-color 0.2s,
+          box-shadow 0.2s;
+        box-shadow: 0 0 10px #34a853;
+      }
+
+      #start-screen,
+      #end-screen {
+        backdrop-filter: blur(10px);
+      }
+
+      #io-logo {
+        text-shadow: 0 0 40px rgba(255, 255, 255, 0.4);
+        will-change: opacity, transform;
+      }
+
+      .explode {
+        animation: explode-anim 0.4s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+      }
+
+      @keyframes explode-anim {
+        0% {
+          transform: scale(1);
+          filter: brightness(2) blur(0px);
+          opacity: 1;
+        }
+        50% {
+          filter: brightness(5) blur(10px);
+          opacity: 0.8;
+        }
+        100% {
+          transform: scale(0.01);
+          filter: brightness(1) blur(0px);
+          opacity: 0;
+        }
+      }
+    </style>
+  </head>
+  <body class="text-white">
+    <!-- Overlays -->
+    <div id="damage-overlay"></div>
+
+    <!-- Tela Inicial -->
+    <div
+      id="start-screen"
+      class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 transition-opacity duration-500"
+    >
+      <h1 class="text-4xl font-black mb-4 tracking-tighter">REFLEXO F1</h1>
+      <p class="text-gray-400 mb-8 max-w-md text-center">
+        Mova o cursor para acelerar o motor da F1. Clique no alvo o mais rápido
+        que puder sem errar.
+      </p>
+      <button
+        id="btn-start"
+        class="px-8 py-4 bg-white text-black font-bold rounded-full hover:scale-105 transition-transform"
+      >
+        INICIAR MOTOR
+      </button>
+    </div>
+
+    <!-- Tela Final -->
+    <div
+      id="end-screen"
+      class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 transition-opacity duration-500"
+      style="display: none; opacity: 0"
+    >
+      <h2 class="text-5xl font-black mb-4 text-green-400 tracking-tighter">
+        POLE POSITION!
+      </h2>
+      <div
+        id="final-stats"
+        class="text-3xl font-black mb-8 text-teal-400 drop-shadow-[0_0_15px_rgba(45,212,191,0.8)]"
+      >
+        Média: 0ms
+      </div>
+      <button
+        id="btn-restart"
+        class="px-8 py-4 bg-white text-black font-bold rounded-full hover:scale-105 transition-transform"
+      >
+        NOVA VOLTA
+      </button>
+    </div>
+
+    <!-- UI -->
+    <div id="tachometer">
+      <div id="tachometer-bar"></div>
+    </div>
+
+    <canvas id="fx-canvas"></canvas>
+
+    <div id="target" style="display: none">1</div>
+
+    <!-- Logo final -->
+    <div
+      id="io-logo"
+      class="absolute inset-0 z-40 flex items-center justify-center text-8xl md:text-9xl font-black opacity-0 pointer-events-none transition-all duration-1000 transform scale-50"
+    >
+      <span style="color: #4285f4">G</span><span style="color: #ea4335">o</span
+      ><span style="color: #fbbc05">o</span><span style="color: #4285f4">g</span
+      ><span style="color: #34a853">l</span
+      ><span style="color: #ea4335">e</span>
+      <span class="ml-4 text-white">I/O</span>
+    </div>
+
+    <script>
+      /**
+       * Motor de Áudio Refatorado
+       */
+      class AudioEngine {
+        constructor() {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          this.waveforms = ["sine", "square", "sawtooth", "triangle"];
+
+          // Synth Melódico
+          this.osc = this.ctx.createOscillator();
+          this.gain = this.ctx.createGain();
+          this.osc.type = "sine";
+          this.osc.connect(this.gain);
+          this.gain.connect(this.ctx.destination);
+          this.osc.frequency.value = 100;
+          this.gain.gain.value = 0;
+          this.osc.start();
+
+          // Synth do Motor
+          this.engineOsc = this.ctx.createOscillator();
+          this.engineGain = this.ctx.createGain();
+          this.engineOsc.type = "sawtooth";
+          this.engineOsc.connect(this.engineGain);
+          this.engineGain.connect(this.ctx.destination);
+          this.engineOsc.frequency.value = 30;
+          this.engineGain.gain.value = 0;
+          this.engineOsc.start();
+        }
+
+        resume() {
+          if (this.ctx.state === "suspended") this.ctx.resume();
+        }
+
+        updateSynth(energy, number, xRatio) {
+          this.resume();
+          const t = this.ctx.currentTime + 0.05;
+
+          // Melodia
+          const freq = 100 + number * 50 + xRatio * 600 + energy * 5;
+          const vol = Math.min(energy * 0.005, 0.5);
+          this.osc.frequency.setTargetAtTime(freq, t, 0.05);
+          this.gain.gain.setTargetAtTime(vol, t, 0.05);
+
+          // Motor F1
+          const engineFreq = 30 + energy * 1.2;
+          const engineVol = energy * 0.004;
+          this.engineOsc.frequency.setTargetAtTime(engineFreq, t, 0.1);
+          this.engineGain.gain.setTargetAtTime(engineVol, t, 0.1);
+        }
+
+        playAlarm(number) {
+          this.resume();
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = "square";
+          osc.connect(g);
+          g.connect(this.ctx.destination);
+
+          osc.frequency.setValueAtTime(
+            1500 + number * 150,
+            this.ctx.currentTime,
+          );
+          osc.frequency.exponentialRampToValueAtTime(
+            600,
+            this.ctx.currentTime + 0.2,
+          );
+
+          g.gain.setValueAtTime(0.6, this.ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.3);
+
+          this.osc.type = this.waveforms[number % 4];
+        }
+
+        playMiss() {
+          this.resume();
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = "sawtooth";
+          osc.connect(g);
+          g.connect(this.ctx.destination);
+
+          osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(
+            40,
+            this.ctx.currentTime + 0.3,
+          );
+
+          g.gain.setValueAtTime(0.5, this.ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.3);
+        }
+      }
+
+      /**
+       * Sistema de Partículas e Textos Flutuantes
+       */
+      class ParticleSystem {
+        constructor(canvasId) {
+          this.canvas = document.getElementById(canvasId);
+          this.ctx = this.canvas.getContext("2d");
+          this.particles = [];
+          this.floatingTexts = [];
+          this.resize();
+          window.addEventListener("resize", () => this.resize());
+        }
+
+        resize() {
+          this.canvas.width = window.innerWidth;
+          this.canvas.height = window.innerHeight;
+        }
+
+        spawnText(x, y, text, color, initialVy = -3, life = 1.5) {
+          this.floatingTexts.push({ x, y, text, color, life, vy: initialVy });
+        }
+
+        explode(x, y, hue, energy) {
+          const count = 150 + Math.floor(energy * 3);
+          for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 25 + 5 + energy * 0.4;
+            this.particles.push({
+              x,
+              y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              life: 1.0,
+              decay: 0.01 + Math.random() * 0.02,
+              size: Math.random() * 8 + 2,
+              color: `hsl(${hue}, 100%, 60%)`,
+            });
+          }
+        }
+
+        updateAndDraw(dt) {
+          // Efeito de rastro
+          this.ctx.fillStyle = "rgba(5, 5, 5, 0.25)";
+          this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+          // Partículas
+          for (let i = this.particles.length - 1; i >= 0; i--) {
+            let p = this.particles[i];
+            p.vy += 0.5 * dt;
+            p.vx *= 0.96;
+            p.vy *= 0.96;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.life -= p.decay * dt;
+
+            if (p.life <= 0) {
+              this.particles.splice(i, 1);
+            } else {
+              this.ctx.beginPath();
+              this.ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+              this.ctx.fillStyle = p.color;
+              this.ctx.fill();
+            }
+          }
+
+          // Textos Flutuantes
+          for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+            let ft = this.floatingTexts[i];
+            ft.y += ft.vy * dt;
+            ft.life -= 0.02 * dt;
+
+            if (ft.life <= 0) {
+              this.floatingTexts.splice(i, 1);
+            } else {
+              this.ctx.font = "900 35px Inter";
+              this.ctx.textAlign = "center";
+              this.ctx.fillStyle = ft.color;
+              this.ctx.globalAlpha = ft.life;
+              this.ctx.fillText(ft.text, ft.x, ft.y);
+              this.ctx.globalAlpha = 1.0;
+            }
+          }
+        }
+      }
+
+      /**
+       * Classe Principal do Jogo
+       */
+      class Game {
+        constructor() {
+          this.targetEl = document.getElementById("target");
+          this.logoEl = document.getElementById("io-logo");
+          this.startScreen = document.getElementById("start-screen");
+          this.endScreen = document.getElementById("end-screen");
+          this.statsEl = document.getElementById("final-stats");
+          this.tachometerBar = document.getElementById("tachometer-bar");
+          this.damageOverlay = document.getElementById("damage-overlay");
+
+          document
+            .getElementById("btn-start")
+            .addEventListener("click", () => this.start());
+          document
+            .getElementById("btn-restart")
+            .addEventListener("click", () => this.restart());
+
+          this.particles = new ParticleSystem("fx-canvas");
+          this.audio = null;
+
+          this.state = {
+            number: 1,
+            energy: 0,
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+            vx: 0,
+            vy: 0,
+            mouseX: 0,
+            mouseY: 0,
+            isRunning: false,
+            isExploding: false,
+            lastTime: performance.now(),
+            timeSpawned: 0,
+            reactionTimes: [],
+          };
+
+          this.bindEvents();
+        }
+
+        bindEvents() {
+          const trackMouse = (e) => {
+            if (!this.state.isRunning) return;
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            const dx = clientX - this.state.mouseX;
+            const dy = clientY - this.state.mouseY;
+            const now = performance.now();
+            const dt = Math.max(1, now - this.state.lastTime);
+            const speed = Math.sqrt(dx * dx + dy * dy) / dt;
+
+            this.state.mouseX = clientX;
+            this.state.mouseY = clientY;
+
+            if (speed > 0.5 && !this.state.isExploding) {
+              this.state.energy = Math.min(
+                this.state.energy + speed * 2.0,
+                100,
+              );
+            }
+          };
+
+          window.addEventListener("mousemove", trackMouse);
+          window.addEventListener("touchmove", trackMouse);
+
+          // Punição por erro (Clique na tela que não seja o alvo)
+          document.addEventListener("mousedown", (e) => {
+            if (!this.state.isRunning || this.state.isExploding) return;
+            if (
+              e.target !== this.targetEl &&
+              !e.target.closest("#tachometer")
+            ) {
+              this.punishMiss(e.clientX, e.clientY);
+            }
           });
-        }
-      }
 
-      spawnText(x, y, text, color) {
-        this.floatingTexts.push({
-          x, y, text, color, life: 1.5, vy: -2
-        });
-      }
-
-      updateAndDraw(dt) {
-        // Efeito de rastro (trail)
-        this.ctx.fillStyle = 'rgba(5, 5, 5, 0.3)';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.globalCompositeOperation = 'lighter';
-
-        // Draw Shockwaves
-        for (let i = this.shockwaves.length - 1; i >= 0; i--) {
-          let sw = this.shockwaves[i];
-          sw.radius += (sw.maxRadius - sw.radius) * 0.1 * dt;
-          sw.alpha -= 0.05 * dt;
-
-          if (sw.alpha <= 0) {
-            this.shockwaves.splice(i, 1);
-            continue;
-          }
-
-          this.ctx.beginPath();
-          this.ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
-          this.ctx.strokeStyle = sw.color;
-          this.ctx.globalAlpha = sw.alpha;
-          this.ctx.lineWidth = 4;
-          this.ctx.stroke();
-          this.ctx.globalAlpha = 1;
+          const hitTarget = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.hit();
+          };
+          this.targetEl.addEventListener("mousedown", hitTarget);
+          this.targetEl.addEventListener("touchstart", hitTarget);
         }
 
-        // Draw Particles
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-          let p = this.particles[i];
-          
-          p.vy += 0.5 * dt; // Gravidade
-          p.vx *= 0.96; // Atrito
-          p.vy *= 0.96;
-          
-          p.x += p.vx * dt;
-          p.y += p.vy * dt;
-          p.life -= p.decay * dt;
+        punishMiss(x, y) {
+          this.state.energy = 0;
+          this.audio.playMiss();
 
-          if (p.life <= 0) {
-            this.particles.splice(i, 1);
-            continue;
-          }
+          // Efeito Visual Otimizado (Sem repaints pesados)
+          this.damageOverlay.classList.add("flash-red");
+          setTimeout(
+            () => this.damageOverlay.classList.remove("flash-red"),
+            50,
+          );
 
-          this.ctx.beginPath();
-          this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-          this.ctx.fillStyle = p.color;
-          this.ctx.globalAlpha = p.life;
-          this.ctx.fill();
+          this.particles.spawnText(x, y, "ERROR", "#ff3333", -2, 1.0);
         }
 
-        // Draw Floating Texts
-        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-          let ft = this.floatingTexts[i];
-          ft.y += ft.vy * dt;
-          ft.life -= 0.02 * dt;
-
-          if (ft.life <= 0) {
-            this.floatingTexts.splice(i, 1);
-            continue;
-          }
-
-          this.ctx.font = "900 35px Inter";
-          this.ctx.textAlign = "center";
-          this.ctx.fillStyle = ft.color;
-          this.ctx.globalAlpha = ft.life > 1 ? 1 : ft.life;
-          this.ctx.fillText(ft.text, ft.x, ft.y);
-        }
-
-        this.ctx.globalAlpha = 1;
-        this.ctx.globalCompositeOperation = 'source-over';
-      }
-    }
-
-    /**
-     * Classe Principal do Jogo
-     */
-    class Game {
-      constructor() {
-        this.targetEl = document.getElementById('target');
-        this.logoEl = document.getElementById('io-logo');
-        this.startScreen = document.getElementById('start-screen');
-        this.btnStart = document.getElementById('btn-start');
-        
-        this.endScreen = document.getElementById('end-screen');
-        this.btnRestart = document.getElementById('btn-restart');
-        
-        this.particles = new ParticleSystem('fx-canvas');
-        this.audio = null; // Inicializado no start
-        
-        this.state = {
-          number: 1,
-          energy: 0,
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
-          vx: 0,
-          vy: 0,
-          mouseX: 0,
-          mouseY: 0,
-          isRunning: false,
-          lastTime: performance.now(),
-          timeSpawned: performance.now(),
-          reactionTimes: []
-        };
-
-        this.bindEvents();
-      }
-
-      bindEvents() {
-        this.btnStart.addEventListener('click', () => this.start());
-        this.btnRestart.addEventListener('click', () => this.restart());
-        
-        const trackMouse = (e) => {
-          if (!this.state.isRunning) return;
-          const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-          const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-          
-          const dx = clientX - this.state.mouseX;
-          const dy = clientY - this.state.mouseY;
-          const speed = Math.sqrt(dx * dx + dy * dy);
-          
-          this.state.mouseX = clientX;
-          this.state.mouseY = clientY;
-          
-          if (speed > 1) {
-            this.state.energy = Math.min(this.state.energy + speed * 0.5, 100);
-          }
-        };
-
-        window.addEventListener('mousemove', trackMouse);
-        window.addEventListener('touchmove', trackMouse);
-        
-        const hitTarget = (e) => {
-          e.preventDefault();
-          this.hit();
-        };
-        this.targetEl.addEventListener('mousedown', hitTarget);
-        this.targetEl.addEventListener('touchstart', hitTarget);
-      }
-
-      start() {
-        this.audio = new AudioEngine();
-        this.state.isRunning = true;
-        this.startScreen.style.opacity = '0';
-        setTimeout(() => {
-          this.startScreen.style.display = 'none';
-          this.targetEl.style.display = 'flex';
-          this.loop();
-        }, 500);
-      }
-
-      hit() {
-        if (!this.state.isRunning) return;
-        
-        // Calcular tempo de reação
-        const rxTime = Math.floor(performance.now() - this.state.timeSpawned);
-        this.state.reactionTimes.push(rxTime);
-        
-        // Cor do texto baseada na agilidade
-        let textColor = "#00ffcc";
-        if (rxTime > 350) textColor = "#ffff00";
-        if (rxTime > 600) textColor = "#ff9900";
-        
-        this.particles.spawnText(this.state.x, this.state.y, `${rxTime}ms`, textColor);
-        
-        const currentColor = this.targetEl.style.color || "#ffffff";
-        this.particles.explode(this.state.x, this.state.y, currentColor, this.state.energy);
-        this.audio.playExplosion(this.state.number);
-        
-        this.state.number++;
-        this.state.energy = 0;
-        
-        if (this.state.number > 10) {
-          this.win();
-        } else {
-          this.targetEl.textContent = this.state.number;
-          this.respawnTarget();
-        }
-      }
-
-      respawnTarget() {
-        const padding = 100;
-        this.state.x = padding + Math.random() * (window.innerWidth - padding * 2);
-        this.state.y = padding + Math.random() * (window.innerHeight - padding * 2);
-        this.state.vx = (Math.random() - 0.5) * 10;
-        this.state.vy = (Math.random() - 0.5) * 10;
-        this.state.timeSpawned = performance.now();
-      }
-
-      win() {
-        this.state.isRunning = false;
-        this.targetEl.style.display = 'none';
-        
-        // Calcular média
-        const avg = Math.floor(this.state.reactionTimes.reduce((a,b)=>a+b, 0) / this.state.reactionTimes.length);
-        document.getElementById('final-score-text').innerHTML = `Sua média de reação foi de <span class="text-white">${avg}ms</span>!`;
-        
-        // Massive explosion
-        this.particles.explode(window.innerWidth/2, window.innerHeight/2, '#4285F4', 200);
-        
-        // Show Logo
-        this.logoEl.style.opacity = '1';
-        this.logoEl.style.transform = 'scale(1)';
-        
-        setTimeout(() => {
-          this.logoEl.style.opacity = '0';
-          this.logoEl.style.transform = 'scale(1.5)';
-          
-          // Mostrar tela de fim em vez de reset automático
+        start() {
+          this.audio = new AudioEngine();
+          this.state.isRunning = true;
+          this.state.timeSpawned = performance.now();
+          this.startScreen.style.opacity = "0";
           setTimeout(() => {
-            this.endScreen.style.display = 'flex';
-            void this.endScreen.offsetWidth; // Forçar reflow para animação rodar
-            this.endScreen.style.opacity = '1';
-          }, 1000);
-        }, 3000);
-      }
-
-      restart() {
-        this.endScreen.style.opacity = '0';
-        setTimeout(() => {
-          this.endScreen.style.display = 'none';
-          this.reset();
-        }, 500);
-      }
-
-      reset() {
-        this.state.number = 1;
-        this.state.reactionTimes = [];
-        this.targetEl.textContent = this.state.number;
-        this.targetEl.style.display = 'flex';
-        this.respawnTarget();
-        this.state.isRunning = true;
-      }
-
-      loop(currentTime = performance.now()) {
-        const dt = (currentTime - this.state.lastTime) / 16.66; // Normalizado para 60fps (1.0)
-        this.state.lastTime = currentTime;
-
-        if (this.state.isRunning) {
-          this.updatePhysics(dt);
-          this.audio.updateSynth(this.state.energy, this.state.number, this.state.mouseX / window.innerWidth);
+            this.startScreen.style.display = "none";
+            this.targetEl.style.display = "flex";
+            this.loop();
+          }, 500);
         }
 
-        this.particles.updateAndDraw(dt);
-        requestAnimationFrame((t) => this.loop(t));
-      }
+        hit() {
+          if (!this.state.isRunning || this.state.isExploding) return;
+          this.state.isExploding = true;
 
-      updatePhysics(dt) {
-        let s = this.state;
-        
-        // Decaimento de energia
-        s.energy = Math.max(0, s.energy - 0.5 * dt);
+          const rxTime = Math.floor(performance.now() - this.state.timeSpawned);
+          this.state.reactionTimes.push(rxTime);
 
-        // Styling baseado na energia e número
-        const scale = 0.5 + (s.number * 0.05) + (s.energy * 0.01);
-        const hue = (s.number * 36 + s.energy * 2) % 360;
-        const color = `hsl(${hue}, 100%, 60%)`;
-        
-        this.targetEl.style.color = color;
-        this.targetEl.style.textShadow = `0 0 ${10 + s.energy}px ${color}`;
-        
-        // Dinâmica de Movimento
-        const maxSpeed = 3 + (s.number * 0.5) + (s.energy * 0.2);
-        
-        s.vx += (Math.random() - 0.5) * (1 + s.energy * 0.1) * dt;
-        s.vy += (Math.random() - 0.5) * (1 + s.energy * 0.1) * dt;
+          let textColor = "#00ffcc";
+          if (rxTime > 350) textColor = "#ffff00";
+          if (rxTime > 600) textColor = "#ff9900";
 
-        // Normalização de velocidade
-        const speed = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
-        if (speed > maxSpeed) {
-          s.vx = (s.vx / speed) * maxSpeed;
-          s.vy = (s.vy / speed) * maxSpeed;
+          this.particles.spawnText(
+            this.state.x,
+            this.state.y,
+            `${rxTime}ms`,
+            textColor,
+          );
+
+          const currentHue =
+            (this.state.number * 36 + this.state.energy * 2) % 360;
+          this.particles.explode(
+            this.state.x,
+            this.state.y,
+            currentHue,
+            this.state.energy,
+          );
+          this.audio.playAlarm(this.state.number);
+
+          this.targetEl.classList.add("explode");
+
+          setTimeout(() => {
+            if (this.state.number >= 10) {
+              this.win();
+            } else {
+              this.state.number++;
+              this.targetEl.textContent = this.state.number;
+              this.targetEl.classList.remove("explode");
+              this.state.energy = 0;
+              this.respawnTarget();
+              this.state.isExploding = false;
+              this.state.timeSpawned = performance.now();
+            }
+          }, 400);
         }
 
-        s.x += s.vx * dt;
-        s.y += s.vy * dt;
+        respawnTarget() {
+          const padding = 100;
+          this.state.x =
+            padding + Math.random() * (window.innerWidth - padding * 2);
+          this.state.y =
+            padding + Math.random() * (window.innerHeight - padding * 2);
+          this.state.vx = 0;
+          this.state.vy = 0;
+        }
 
-        // Colisão com as bordas
-        const size = 60 * scale;
-        if (s.x < size) { s.x = size; s.vx *= -1; }
-        if (s.x > window.innerWidth - size) { s.x = window.innerWidth - size; s.vx *= -1; }
-        if (s.y < size) { s.y = size; s.vy *= -1; }
-        if (s.y > window.innerHeight - size) { s.y = window.innerHeight - size; s.vy *= -1; }
+        win() {
+          this.state.isRunning = false;
+          this.targetEl.style.display = "none";
+          this.targetEl.classList.remove("explode");
 
-        this.targetEl.style.transform = `translate(${s.x - 60}px, ${s.y - 60}px) scale(${scale})`;
+          const avg = Math.floor(
+            this.state.reactionTimes.reduce((a, b) => a + b, 0) /
+              this.state.reactionTimes.length,
+          );
+          this.statsEl.textContent = `Média: ${avg}ms`;
+
+          this.particles.explode(
+            window.innerWidth / 2,
+            window.innerHeight / 2,
+            210,
+            200,
+          ); // 210 = #4285F4 (Azul Google)
+
+          this.logoEl.style.opacity = "1";
+          this.logoEl.style.transform = "scale(1)";
+
+          setTimeout(() => {
+            this.logoEl.style.opacity = "0";
+            this.logoEl.style.transform = "scale(1.5)";
+
+            setTimeout(() => {
+              this.endScreen.style.display = "flex";
+              void this.endScreen.offsetWidth;
+              this.endScreen.style.opacity = "1";
+            }, 1000);
+          }, 3000);
+        }
+
+        restart() {
+          this.endScreen.style.opacity = "0";
+          setTimeout(() => {
+            this.endScreen.style.display = "none";
+            this.state.reactionTimes = [];
+            this.state.number = 1;
+            this.targetEl.textContent = this.state.number;
+            this.targetEl.style.display = "flex";
+            this.respawnTarget();
+            this.state.isExploding = false;
+            this.state.isRunning = true;
+            this.state.timeSpawned = performance.now();
+          }, 500);
+        }
+
+        loop(currentTime = performance.now()) {
+          const dt = (currentTime - this.state.lastTime) / 16.66; // Normalizado para 60fps (dt = 1.0)
+          this.state.lastTime = currentTime;
+
+          if (this.state.isRunning) {
+            this.updatePhysics(dt);
+            this.audio.updateSynth(
+              this.state.energy,
+              this.state.number,
+              this.state.mouseX / window.innerWidth,
+            );
+          }
+
+          this.particles.updateAndDraw(dt);
+          requestAnimationFrame((t) => this.loop(t));
+        }
+
+        updatePhysics(dt) {
+          let s = this.state;
+
+          if (!s.isExploding) {
+            s.energy = Math.max(0, s.energy - 0.5 * dt);
+
+            // Atualiza Tacômetro
+            this.tachometerBar.style.width = `${s.energy}%`;
+            if (s.energy < 50) {
+              this.tachometerBar.style.backgroundColor = "#34A853";
+              this.tachometerBar.style.boxShadow = "0 0 10px #34A853";
+            } else if (s.energy < 85) {
+              this.tachometerBar.style.backgroundColor = "#FBBC05";
+              this.tachometerBar.style.boxShadow = "0 0 15px #FBBC05";
+            } else {
+              this.tachometerBar.style.backgroundColor = "#EA4335";
+              this.tachometerBar.style.boxShadow = "0 0 25px #EA4335";
+            }
+
+            // Dificuldade invertida: alvo diminui
+            const scale = Math.max(0.4, 1.3 - s.energy * 0.009);
+            const hue = (s.number * 36 + s.energy * 2) % 360;
+            const lightness = 50 + s.energy * 0.3;
+            const color = `hsl(${hue}, 100%, ${lightness}%)`;
+
+            this.targetEl.style.color = color;
+            this.targetEl.style.textShadow = `0 0 ${10 + s.energy}px ${color}`;
+
+            // Dinâmica de Movimento com DT (Independente de Framerate)
+            const maxSpeed = 3 + s.energy * 0.7;
+
+            s.vx += (Math.random() - 0.5) * (1 + s.energy * 0.25) * dt;
+            s.vy += (Math.random() - 0.5) * (1 + s.energy * 0.25) * dt;
+
+            const speed = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
+            if (speed > maxSpeed) {
+              s.vx = (s.vx / speed) * maxSpeed;
+              s.vy = (s.vy / speed) * maxSpeed;
+            }
+
+            s.x += s.vx * dt;
+            s.y += s.vy * dt;
+
+            // Colisão com as bordas do Viewport
+            const rectSize = 75 * scale;
+            if (s.x < rectSize) {
+              s.x = rectSize;
+              s.vx *= -1;
+            }
+            if (s.x > window.innerWidth - rectSize) {
+              s.x = window.innerWidth - rectSize;
+              s.vx *= -1;
+            }
+            if (s.y < rectSize) {
+              s.y = rectSize;
+              s.vy *= -1;
+            }
+            if (s.y > window.innerHeight - rectSize) {
+              s.y = window.innerHeight - rectSize;
+              s.vy *= -1;
+            }
+
+            // Aplicação de posição absoluta na renderização DOM
+            // Retiramos a centralização com translate(-50%) para operar posições absolutas limpas
+            this.targetEl.style.transform = `translate(${s.x - 75}px, ${s.y - 75}px) scale(${scale})`;
+          } else {
+            this.tachometerBar.style.width = `0%`;
+          }
+        }
       }
-    }
 
-    // Inicialização
-    window.onload = () => {
-      new Game();
-    };
-  </script>
-</body>
+      // Inicialização segura
+      window.onload = () => {
+        new Game();
+      };
+    </script>
+  </body>
 </html>
