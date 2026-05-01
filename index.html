@@ -5,15 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reflexo F1 - Sintetizador Numérico</title>
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div id="particles-container"></div>
+  <canvas id="canvas"></canvas>
+  
   <div id="the-number">1</div>
-  <div id="io-logo" style="display: none;">
-    <span style="color: #4285F4">G</span><span style="color: #EA4335">o</span><span style="color: #FBBC05">o</span><span style="color: #4285F4">g</span><span style="color: #34A853">l</span><span style="color: #EA4335">e</span>
-    <span style="color: #ffffff; margin-left: 10px;">I/O</span>
+  
+  <div id="tachometer">
+    <div id="tachometer-bar"></div>
   </div>
+
+  <div id="io-logo" style="display: none;">
+    <div class="logo-text">
+      <span style="color: #4285F4">G</span><span style="color: #EA4335">o</span><span style="color: #FBBC05">o</span><span style="color: #4285F4">g</span><span style="color: #34A853">l</span><span style="color: #EA4335">e</span>
+      <span style="color: #ffffff; margin-left: 10px;">I/O</span>
+    </div>
+    <div id="final-stats">Média: 0ms</div>
+  </div>
+  
   <script src="script.js"></script>
 </body>
 </html>
